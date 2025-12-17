@@ -1,8 +1,8 @@
 # CRD 관련
 crds:
-  enabled: true
+  enabled: false
   upgradeJob:
-    enabled: true
+    enabled: false
 
 # Prometheus Operator 관련
 prometheusOperator:
