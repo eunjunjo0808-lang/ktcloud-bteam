@@ -93,7 +93,7 @@ alertmanager:
 # Grafana 설정
 grafana:
   enabled: true
-  replicasCount: 1
+  replicaCount: 1
   adminUser: admin
   admin:
     existingSecret: "grafana-pw"
