@@ -1,0 +1,152 @@
+# CRD 관련
+crds:
+  enabled: true
+  upgradeJob:
+    enabled: true
+
+# Prometheus Operator 관련
+prometheusOperator:
+  enabled: true
+  createCustomResource: true
+
+  serviceMonitorSelectorNilUsesHelmValues: false
+  serviceMonitorSelector:
+    matchLabels:
+      release: prometheus
+  podMonitorSelector:
+    matchLabels:
+      release: prometheus
+  serviceMonitorNamespaceSelector:
+    matchNames:
+      - monitoring
+  podMonitorNamespaceSelector:
+    matchNames:
+      - monitoring
+
+# Prometheus 서버 설정
+prometheus:
+  enabled: true
+  prometheusSpec:
+    replicas: 1
+    retention: "15d"
+    storage:
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 50Gi
+          storageClassName: "gp2"
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "1Gi"
+      limits:
+        cpu: "1"
+        memory: "2Gi"
+
+  persistence:
+    enabled: true
+
+  service:
+    type: NodePort
+    nodePort: 30030
+
+
+# Alertmanager 설정
+alertmanager:
+  enabled: true
+  serviceAccount:
+    create: true
+  alertmanagerSpec:
+    replicas: 1
+    image:
+      registry: quay.io
+      repository: prometheus/alertmanager
+      tag: v0.29.0
+    useExistingSecret: false
+    #configSecret: "alertmanager-config"
+    automountServiceAccountToken: true
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "256Mi"
+      limits:
+        cpu: "500m"
+        memory: "512Mi"
+    storage:
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 5Gi
+          storageClassName: "gp2"
+  persistence:
+    enabled: true
+
+  service:
+    enabled: true
+    type: NodePort
+    nodePort: 30032
+
+# Grafana 설정
+grafana:
+  enabled: true
+  replicasCount: 1
+  adminUser: admin
+  admin:
+    existingSecret: "grafana-pw"
+    userKey: "admin-user"
+    passwordKey: "admin-password"
+
+  service:
+    type: NodePort
+    nodePort: 30031
+
+  ingress:
+    enabled: false
+
+  persistence:
+    enabled: true
+    storageClassName: "gp2"
+    accessModes:
+      - ReadWriteOnce
+    size: 10Gi
+
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "1Gi"
+
+  defaultDashboardsEnabled: false
+
+# kube-state-metrics
+kubeStateMetrics:
+  enabled: true
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "128Mi"
+
+# node-exporter
+nodeExporter:
+  enabled: true
+  hostRootFsMount: true
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "64Mi"
+
+prometheus-node-exporter:
+  enabled: false
+
+# RBAC
+global:
+  rbac:
+    create: true
+
+imagePullSecrets: []
