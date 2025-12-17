@@ -1,8 +1,8 @@
 # CRD 관련
 crds:
-  enabled: false
+  enabled: true
   upgradeJob:
-    enabled: false
+    enabled: true
 
 # Prometheus Operator 관련
 prometheusOperator:
@@ -35,7 +35,7 @@ prometheus:
           accessModes: ["ReadWriteOnce"]
           resources:
             requests:
-              storage: 50Gi
+              storage: 10Gi
           storageClassName: "gp2"
     resources:
       requests:
