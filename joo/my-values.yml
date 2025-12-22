@@ -7,15 +7,16 @@ crds:
 # Prometheus Operator 관련
 prometheusOperator:
   enabled: true
+  #hostNetwork: true
   createCustomResource: true
 
   serviceMonitorSelectorNilUsesHelmValues: false
   serviceMonitorSelector:
     matchLabels:
-      release: prometheus
+      release: prom
   podMonitorSelector:
     matchLabels:
-      release: prometheus
+      release: prom
   serviceMonitorNamespaceSelector:
     matchNames:
       - monitoring
@@ -28,14 +29,14 @@ prometheus:
   enabled: true
   prometheusSpec:
     replicas: 1
-    retention: "15d"
+    retention: "7d"
     storage:
       volumeClaimTemplate:
         spec:
           accessModes: ["ReadWriteOnce"]
           resources:
             requests:
-              storage: 10Gi
+              storage: 20Gi
           storageClassName: "gp2"
     resources:
       requests:
@@ -60,10 +61,6 @@ alertmanager:
     create: true
   alertmanagerSpec:
     replicas: 1
-    image:
-      registry: quay.io
-      repository: prometheus/alertmanager
-      tag: v0.29.0
     useExistingSecret: false
     #configSecret: "alertmanager-config"
     automountServiceAccountToken: true
@@ -122,27 +119,25 @@ grafana:
       cpu: "500m"
       memory: "1Gi"
 
-  defaultDashboardsEnabled: false
+  defaultDashboardsEnabled: true
 
 # kube-state-metrics
-kubeStateMetrics:
+kube-state-metrics:
   enabled: true
   resources:
     requests:
       cpu: "50m"
       memory: "128Mi"
 
-# node-exporter
-nodeExporter:
+#Node exporter
+prometheus-node-exporter:
   enabled: true
-  hostRootFsMount: true
+  hostRootFsMount: 
+    enabled: true
   resources:
     requests:
       cpu: "50m"
       memory: "64Mi"
-
-prometheus-node-exporter:
-  enabled: false
 
 # RBAC
 global:
