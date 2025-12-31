@@ -13,20 +13,46 @@ spec:
       labels:
         app: logstash
     spec:
+      securityContext:
+        fsGroup: 1000
+
+      initContainers:
+      - name: install-jdbc-driver
+        image: curlimages/curl:8.5.0
+        command:
+          - sh
+          - -c
+          - |
+            mkdir -p /jdbc && \
+            curl -L -o /jdbc/postgresql.jar https://jdbc.postgresql.org/download/postgresql-42.7.3.jar && \
+            chmod 644 /jdbc/postgresql.jar
+        volumeMounts:
+        - name: jdbc-driver
+          mountPath: /jdbc
+
       containers:
       - name: logstash
         image: docker.elastic.co/logstash/logstash:8.19.0
+        command: ["/usr/share/logstash/bin/logstash"]
+        args:
+          - "-f"
+          - "/usr/share/logstash/pipeline/logstash.conf"
+          - "--log.level"
+          - "info"
         ports:
         - containerPort: 5044
+        env:
+        - name: LS_JAVA_OPTS
+          value: "-Xms512m -Xmx512m"
         volumeMounts:
         - name: config
           mountPath: /usr/share/logstash/pipeline/logstash.conf
           subPath: logstash.conf
         - name: ca
           mountPath: /usr/share/logstash/config/certs
-        env:
-        - name: LS_JAVA_OPTS
-          value: "-Xms512m -Xmx512m"
+        - name: jdbc-driver
+          mountPath: /usr/share/logstash/vendor/jar/jdbc
+
       volumes:
       - name: config
         configMap:
@@ -34,3 +60,5 @@ spec:
       - name: ca
         secret:
           secretName: logstash-ca
+      - name: jdbc-driver
+        emptyDir: {}

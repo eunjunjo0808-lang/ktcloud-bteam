@@ -1,0 +1,46 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: logstash-config
+  namespace: elk
+data:
+  logstash.conf: |
+    input {
+      jdbc {
+        jdbc_driver_library => "/usr/share/logstash/vendor/jar/jdbc/postgresql.jar"
+        jdbc_driver_class => "org.postgresql.Driver"
+        jdbc_connection_string => "jdbc:postgresql://kt.bucket.click:5432/gateway"
+        jdbc_user => "postgres"
+        jdbc_password => "bbq123"
+        schedule => "* * * * *"
+        statement => "SELECT * FROM public.v_access_log WHERE ts >= CURRENT_DATE + TIME '10:00:00'"
+      }
+    }
+
+    filter {
+      mutate {
+        rename => { "ts" => "@timestamp" }
+        add_field => { "event_type" => "access_log" }
+      }
+      
+      if ![ip] {
+        mutate {
+          add_field => { "src_ip" => "%{host}" }
+        }
+      } else {
+        mutate {
+          add_field => { "src_ip" => "%{ip}" }
+        }
+      }
+    }
+
+    output {
+      elasticsearch {
+        hosts => ["https://elasticsearch-es-http.elk.svc:9200"]
+        user => "elastic"
+        password => "5vGOs99M5F1m9bNB154b9QBB"
+        ssl => true
+        cacert => "/usr/share/logstash/config/certs/ca.crt"
+        index => "access-log-%{+YYYY.MM.dd}"
+      }
+    }
