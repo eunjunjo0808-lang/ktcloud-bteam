@@ -1,0 +1,129 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: project-integrated-rules
+  namespace: monitoring
+  labels:
+    release: prom
+spec:
+  groups:
+  # ----------------------------------------------------------------
+  # 1. 인프라 (Node) 관련 알람
+  # ----------------------------------------------------------------
+  - name: node.rules
+    rules:
+    # CPU 사용량이 90% 이상일 때 경고
+    - alert: NodeHighCpuLoad
+      expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[1m])) * 100) > 90
+      for: 1m
+      labels:
+        severity: warning
+      annotations:
+        summary: "노드 CPU 사용량 높음 ({{ $labels.instance }})"
+        description: "CPU 사용량이 90%를 초과했습니다. (현재값: {{ $value }}%) 👉 <http://34.64.88.21:30030/graph?g0.expr=100-(avg%20by(instance)(rate(node_cpu_seconds_total%7Bmode%3D%22idle%22%7D%5B1m%5D))*100)&g0.tab=0|그래프 보기>"
+
+    # 메모리 사용량이 90% 이상일 때 경고
+    - alert: NodeLowMemory
+      expr: (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100 < 10
+      for: 1m
+      labels:
+        severity: warning
+      annotations:
+        summary: "노드 메모리 부족 ({{ $labels.instance }})"
+        description: "가용 메모리가 10% 미만입니다. (현재값: {{ $value }}%) 👉 <http://34.64.88.21:30030/graph?g0.expr=(node_memory_MemAvailable_bytes%2Fnode_memory_MemTotal_bytes)*100&g0.tab=0|그래프 보기>"
+
+    # 디스크 여유 공간이 15% 미만일 때 경고
+    - alert: NodeLowDiskSpace
+      expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100 < 15
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "디스크 공간 부족 ({{ $labels.instance }})"
+        description: "디스크 여유 공간이 15% 미만입니다. 👉 <http://34.64.88.21:30030/graph?g0.expr=(node_filesystem_avail_bytes%7Bmountpoint%3D%22%2F%22%7D%2Fnode_filesystem_size_bytes%7Bmountpoint%3D%22%2F%22%7D)*100&g0.tab=0|그래프 보기>"
+
+  # ----------------------------------------------------------------
+  # 2. 쿠버네티스 (Pod/Workload) 관련 알람
+  # ----------------------------------------------------------------
+  - name: kubernetes.rules
+    rules:
+    # 파드가 계속 재시작될 때
+    - alert: PodRestartingTooMuch
+      expr: increase(kube_pod_container_status_restarts_total[10m]) > 3
+      for: 0m
+      labels:
+        severity: warning
+      annotations:
+        summary: "파드 재시작 빈번함 ({{ $labels.pod }})"
+        description: "최근 10분간 3회 이상 재시작되었습니다. 👉 <http://34.64.88.21:30030/graph?g0.expr=increase(kube_pod_container_status_restarts_total%5B10m%5D)&g0.tab=0|그래프 보기>"
+
+    # 배포된 파드 갯수가 모자랄 때
+    - alert: DeploymentReplicasMismatch
+      expr: kube_deployment_status_replicas_ready != kube_deployment_spec_replicas
+      for: 10m
+      labels:
+        severity: warning
+      annotations:
+        summary: "디플로이먼트 복제본 부족 ({{ $labels.deployment }})"
+        description: "준비된 파드 수가 설정된 수보다 적습니다. 👉 <http://34.64.88.21:30030/graph?g0.expr=kube_deployment_status_replicas_ready!%3Dkube_deployment_spec_replicas&g0.tab=0|그래프 보기>"
+
+  # ----------------------------------------------------------------
+  # 3. 애플리케이션 (Gateway & ELK) 관련 알람
+  # ----------------------------------------------------------------
+  - name: application.rules
+    rules:
+    # HTTP 에러율(5xx) 급증
+    - alert: HighHttpErrorRate
+      expr: sum(rate(http_requests_total{status=~"5.."}[10m])) / sum(rate(http_requests_total[10m])) * 100 > 5
+      for: 5m
+      labels:
+        severity: critical
+      annotations:
+        summary: "HTTP 에러율 급증 ({{ $labels.job }})"
+        description: "최근 10분간 500번대 에러율이 5%를 초과했습니다. 👉 <https://34.47.100.137/app/discover#/?_g=(filters:!(),refreshInterval:(pause:!t,value:60000),time:(from:now-15m,to:now))&_a=(columns:!(),dataSource:(dataViewId:c7860fa8-7926-4b1b-9c1b-be73c0e3111e,type:dataView),filters:!(),interval:auto,query:(language:kuery,query:''),sort:!(!('@timestamp',desc)))|로그 확인하기(Kibana)>"
+
+    # 응답 속도 지연
+    - alert: HighLatency
+      expr: histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, job)) > 1.0
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "응답 속도 지연 ({{ $labels.job }})"
+        description: "P99 응답 속도가 1초를 초과했습니다. 👉 <https://34.47.100.137/app/discover#/?_g=(filters:!(),refreshInterval:(pause:!t,value:60000),time:(from:now-15m,to:now))&_a=(columns:!(),dataSource:(dataViewId:c7860fa8-7926-4b1b-9c1b-be73c0e3111e,type:dataView),filters:!(),interval:auto,query:(language:kuery,query:''),sort:!(!('@timestamp',desc)))|로그 확인하기(Kibana)>"
+
+  # ----------------------------------------------------------------
+  # 4. 게이트웨이 비즈니스 로직 알람
+  # ----------------------------------------------------------------
+  - name: gateway-business.rules
+    rules:
+    - alert: HighAuthFailures
+      # 'failure' 결과가 5분간 5회 이상 증가하면 경보
+      expr: increase(auth_events_total{result="failure"}[5m]) > 4
+      for: 0m
+      labels:
+        severity: warning
+      annotations:
+        # reason 라벨(예: email_otp_invalid)을 제목에 보여줍니다.
+        summary: "로그인 실패 급증 ({{ $labels.reason }})"
+        description: "최근 5분간 로그인 실패가 5건 이상 발생했습니다. 원인: {{ $labels.reason }} 👉 <https://34.47.100.137/app/discover#/?_g=(filters:!(),refreshInterval:(pause:!t,value:60000),time:(from:now-15m,to:now))&_a=(columns:!(),dataSource:(dataViewId:c7860fa8-7926-4b1b-9c1b-be73c0e3111e,type:dataView),filters:!(),interval:auto,query:(language:kuery,query:''),sort:!(!('@timestamp',desc)))|로그 확인하기(Kibana)>"
+
+    # [보안] 레이트 리미팅(차단)
+    - alert: HighRateLimitHits
+      expr: increase(http_requests_total{status="429"}[5m]) > 50
+      for: 1m
+      labels:
+        severity: warning
+      annotations:
+        summary: "과도한 요청 차단 발생 (Rate Limit)"
+        description: "최근 5분간 50건 이상의 요청이 레이트 리미트에 의해 차단(429)되었습니다. 👉 <https://34.47.100.137/app/discover#/?_g=(filters:!(),refreshInterval:(pause:!t,value:60000),time:(from:now-15m,to:now))&_a=(columns:!(),dataSource:(dataViewId:c7860fa8-7926-4b1b-9c1b-be73c0e3111e,type:dataView),filters:!(),interval:auto,query:(language:kuery,query:''),sort:!(!('@timestamp',desc)))|로그 확인하기(Kibana)>"
+
+    # [감사] 설정 변경
+    - alert: GatewayConfigChanged
+      expr: increase(audit_events_total[5m]) > 0
+      for: 0m
+      labels:
+        severity: info
+      annotations:
+        summary: "게이트웨이 설정 변경됨"
+        description: "게이트웨이 설정이 변경되었습니다. 👉 <https://34.47.100.137/app/discover#/?_g=(filters:!(),refreshInterval:(pause:!t,value:60000),time:(from:now-15m,to:now))&_a=(columns:!(),dataSource:(dataViewId:c7860fa8-7926-4b1b-9c1b-be73c0e3111e,type:dataView),filters:!(),interval:auto,query:(language:kuery,query:''),sort:!(!('@timestamp',desc)))|로그 확인하기(Kibana)>"

@@ -7,22 +7,12 @@ crds:
 # Prometheus Operator 관련
 prometheusOperator:
   enabled: true
-  #hostNetwork: true
   createCustomResource: true
-
   serviceMonitorSelectorNilUsesHelmValues: false
-  serviceMonitorSelector:
-    matchLabels:
-      release: prom
-  podMonitorSelector:
-    matchLabels:
-      release: prom
-  serviceMonitorNamespaceSelector:
-    matchNames:
-      - monitoring
-  podMonitorNamespaceSelector:
-    matchNames:
-      - monitoring
+  serviceMonitorSelector: {}
+  podMonitorSelector: {}
+  serviceMonitorNamespaceSelector: {}
+  podMonitorNamespaceSelector: {}
 
 # Prometheus 서버 설정
 prometheus:
@@ -37,7 +27,7 @@ prometheus:
           resources:
             requests:
               storage: 20Gi
-          storageClassName: "gp2"
+          storageClassName: "standard-rwo"
     resources:
       requests:
         cpu: "500m"
@@ -46,6 +36,13 @@ prometheus:
         cpu: "1"
         memory: "2Gi"
 
+    serviceMonitorSelector: {}
+    serviceMonitorNamespaceSelector: {}
+    podMonitorSelector: {}
+    podMonitorNamespaceSelector: {}
+    ruleSelector: {}      # 룰(Rule) 파일도 라벨 상관없이 가져오게 설정
+    ruleNamespaceSelector: {}
+
   persistence:
     enabled: true
 
@@ -53,16 +50,59 @@ prometheus:
     type: NodePort
     nodePort: 30030
 
-
 # Alertmanager 설정
 alertmanager:
   enabled: true
   serviceAccount:
     create: true
+  config:
+    global:
+      resolve_timeout: 5m
+    route:
+      group_by: ['alertname', 'job']
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 12h
+      receiver: 'slack-notifications'  # 기본 수신자
+      routes:
+      - match:
+          alertname: HighHttpErrorRate
+        receiver: 'slack-notifications'
+        repeat_interval: 4h
+        group_wait: 1m
+        continue: false
+      
+      - match_re:
+          severity: critical|warning
+        receiver: 'slack-notifications'
+
+    receivers:
+    - name: 'slack-notifications'
+      slack_configs:
+      - channel: '#리소스-이상치'
+        send_resolved: true
+        api_url_file: '/etc/alertmanager/secrets/slack-secret/webhook-url'
+        title: '[{{ .Status | toUpper }}] {{ .CommonAnnotations.summary }}'
+        text: |-
+          {{ range .Alerts }}
+          *경보 내용:* {{ .Annotations.description }}
+          *발생 시간:* {{ .StartsAt.Local.Format "2006-01-02 15:04:05" }} (KST)
+          -------------------------
+          {{ end }}
+
   alertmanagerSpec:
+    secrets:
+      - slack-secret
+    volumes:
+      - name: tz-seoul
+        hostPath:
+          path: /usr/share/zoneinfo/Asia/Seoul
+    volumeMounts:
+      - name: tz-seoul
+        mountPath: /etc/localtime
+        readOnly: true
     replicas: 1
     useExistingSecret: false
-    #configSecret: "alertmanager-config"
     automountServiceAccountToken: true
     resources:
       requests:
@@ -78,7 +118,8 @@ alertmanager:
           resources:
             requests:
               storage: 5Gi
-          storageClassName: "gp2"
+          storageClassName: "standard-rwo"
+  
   persistence:
     enabled: true
 
@@ -106,7 +147,7 @@ grafana:
 
   persistence:
     enabled: true
-    storageClassName: "gp2"
+    storageClassName: "standard-rwo"
     accessModes:
       - ReadWriteOnce
     size: 10Gi
@@ -129,10 +170,10 @@ kube-state-metrics:
       cpu: "50m"
       memory: "128Mi"
 
-#Node exporter
-prometheus-node-exporter:
+# Node exporter
+nodeExporter:
   enabled: true
-  hostRootFsMount: 
+  hostRootFsMount:
     enabled: true
   resources:
     requests:
@@ -145,3 +186,13 @@ global:
     create: true
 
 imagePullSecrets: []
+
+# GKE 관리 컴포넌트 비활성화
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeProxy:
+  enabled: false
+coreDns:
+  enabled: false

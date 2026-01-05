@@ -1,0 +1,79 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: elasticsearch-exporter
+  namespace: elk
+  labels:
+    app: elasticsearch-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: elasticsearch-exporter
+  template:
+    metadata:
+      labels:
+        app: elasticsearch-exporter
+    spec:
+      containers:
+      - name: elasticsearch-exporter
+        image: quay.io/prometheuscommunity/elasticsearch-exporter:v1.7.0
+        resources: {}
+        command:
+         - /bin/sh
+         - -c
+         # 중요: 아래 $(ELASTIC_PASSWORD)는 파일에 저장하면 안전합니다.
+         # 파드가 실행될 때 내부에서 비밀번호로 자동으로 바뀝니다.
+         - >-
+           /bin/elasticsearch_exporter
+           --es.uri=https://elastic:$(ELASTIC_PASSWORD)@elasticsearch-es-http.elk.svc:9200
+           --es.all
+           --es.indices
+           --es.ssl-skip-verify
+        env:
+        - name: ELASTIC_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: elasticsearch-es-elastic-user
+              key: elastic
+        ports:
+        - containerPort: 9114
+          name: metrics   
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: elasticsearch-exporter
+  namespace: elk
+  labels:
+    app: elasticsearch-exporter
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9114"
+spec:
+  selector:
+    app: elasticsearch-exporter
+  ports:
+  - port: 9114
+    targetPort: metrics  # metrics 포트를 바라봄
+    name: metrics        # 서비스 포트 이름도 metrics
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: elasticsearch-exporter
+  namespace: monitoring
+  labels:
+    release: prom
+spec:
+  selector:
+    matchLabels:
+      app: elasticsearch-exporter
+  namespaceSelector:
+    matchNames:
+    - elk
+  endpoints:
+  - port: metrics       # 프로메테우스에게 'metrics' 문을 두드리라고 지시
+    interval: 30s
+    path: /metrics
+    scheme: http
